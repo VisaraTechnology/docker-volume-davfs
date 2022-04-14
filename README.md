@@ -54,7 +54,7 @@ dav_group       root
 
 - https://github.com/docker/go-plugins-helpers
 - https://github.com/vieux/docker-volume-sshfs as template for this repo
-- https://github.com/fentas/docker-volume-davfs the repo
+- https://github.com/fentas/docker-volume-davfs the forked repo
 
 ## LICENSE
 
