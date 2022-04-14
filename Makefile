@@ -1,8 +1,8 @@
-PLUGIN_NAME=fentas/davfs
+PLUGIN_NAME=visaratechnology/docker-volume-davfs
 PLUGIN_TAG=latest
 
 DEV_DOCKER_IMAGE_NAME = docker-cli-dev$(IMAGE_TAG)
-MOUNTS = -v "$(CURDIR)":/go/src/github.com/fentas/docker-volume-davfs
+MOUNTS = -v "$(CURDIR)":/go/src/github.com/visaratechnology/docker-volume-davfs
 
 all: clean rootfs create
 
@@ -31,16 +31,37 @@ enable:
 	@echo "### enable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
 	@docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
 
+enable_debug: disable set_debug enable
+
+set_debug:
+	@echo "### set debug mode for ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker plugin set ${PLUGIN_NAME}:${PLUGIN_TAG} DEBUG=1
+
+disable:
+	@echo "### disable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	-@docker plugin disable ${PLUGIN_NAME}:${PLUGIN_TAG}
+
 push: create enable
 	@echo "### push plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
 	@docker plugin push ${PLUGIN_NAME}:${PLUGIN_TAG}
 
-# build docker image (dockerfiles/Dockerfile.build)
-.PHONY: build_docker_image
-build_docker_image:
-	docker build ${DOCKER_BUILD_ARGS} -t $(DEV_DOCKER_IMAGE_NAME) -f ./dockerfiles/Dockerfile.vndr .
+test: create_volume
+	-docker run -it --rm --name seafile_busybox -v seafile_volume:/data busybox ls /data
 
-# download dependencies (vendor/) listed in vendor.conf, using a container
-.PHONY: vendor
-vendor: build_docker_image vendor.conf
-	docker run -ti --rm $(ENVVARS) $(MOUNTS) $(DEV_DOCKER_IMAGE_NAME) vndr
+create_volume:
+	@echo "### create volume ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker volume create -d ${PLUGIN_NAME} -o url=https://seafile.visara.technology/seafdav -o username=theo@minacori.dev -o password=m8PKWNRUSMm4TNSXvkqR4BxfebMtygRo seafile_volume
+
+clean_test:
+	@echo "### remove container seafile_busybox"
+	-@docker rm seafile_busybox
+	@echo "### remove volume seafile_volume"
+	-@docker volume rm seafile_volume
+
+# Need jq package
+logs:
+	tail -f /run/docker/plugins/$(shell docker plugin inspect visaratechnology/docker-volume-davfs | jq '.[]?.Id' | tr -d '"')/init-stderr & \
+	tail -f /run/docker/plugins/$(shell docker plugin inspect visaratechnology/docker-volume-davfs | jq '.[]?.Id' | tr -d '"')/init-stdout & \
+	tail -f /var/lib/docker/plugins/$(shell docker plugin inspect visaratechnology/docker-volume-davfs | jq '.[]?.Id' | tr -d '"')/rootfs/docker-volume-davfs.log
+	
+alltest: clean_test disable clean rootfs create enable test logs

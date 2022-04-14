@@ -2,22 +2,21 @@
 
 This plugin allows you to mount remote folder using davfs2 in your container easily.
 
-[![TravisCI](https://travis-ci.org/fentas/docker-volume-davfs.svg)](https://travis-ci.org/fentas/docker-volume-davfs)
-[![Go Report Card](https://goreportcard.com/badge/github.com/fentas/docker-volume-davfs)](https://goreportcard.com/report/github.com/fentas/docker-volume-davfs)
+[![Go Report Card](https://goreportcard.com/badge/github.com/VisaraTechnology/docker-volume-davfs)](https://goreportcard.com/report/github.com/VisaraTechnology/docker-volume-davfs)
 
 ## Usage
 
 1 - Install the plugin
 
 ```sh
-docker plugin install fentas/davfs # or docker plugin install fentas/davfs DEBUG=1
+docker plugin install visaratechnology/docker-volume-davfs # or docker plugin install visaratechnology/docker-volume-davfs DEBUG=1
 ```
 
 2 - Create a volume
 
 ```sh
 $ docker volume create \
-  -d fentas/davfs \
+  -d visaratechnology/docker-volume-davfs \
   -o url=<https://user:passwd@host/path> \
   -o uid=1000 -o gid=1000 davvolume
 davvolume
@@ -46,14 +45,6 @@ $ docker run -it -v davvolume:<path> busybox ls <path>
 ```ini
 dav_user        root
 dav_group       root
-kernel_fs       fuse
-buf_size        16
-connect_timeout 10
-read_timeout    30
-retry           10
-max_retry       300
-dir_refresh     30
-# file_refresh    10
 ```
 
 ## TODO
@@ -63,6 +54,7 @@ dir_refresh     30
 
 - https://github.com/docker/go-plugins-helpers
 - https://github.com/vieux/docker-volume-sshfs as template for this repo
+- https://github.com/fentas/docker-volume-davfs the repo
 
 ## LICENSE
 

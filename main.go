@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	// "strconv"
 	"strings"
 	"sync"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 const socketAddress = "/run/docker/plugins/davfs.sock"
@@ -49,7 +49,7 @@ type davfsDriver struct {
 }
 
 func newdavfsDriver(root string) (*davfsDriver, error) {
-	logrus.WithField("method", "new driver").Debug(root)
+	log.Debug().Str("method", "new driver").Msg(root)
 
 	d := &davfsDriver{
 		root:      filepath.Join(root, "volumes"),
@@ -60,7 +60,7 @@ func newdavfsDriver(root string) (*davfsDriver, error) {
 	data, err := ioutil.ReadFile(d.statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logrus.WithField("statePath", d.statePath).Debug("no state found")
+			log.Debug().Str("statePath", d.statePath).Msg("no state found")
 		} else {
 			return nil, err
 		}
@@ -76,17 +76,17 @@ func newdavfsDriver(root string) (*davfsDriver, error) {
 func (d *davfsDriver) saveState() {
 	data, err := json.Marshal(d.volumes)
 	if err != nil {
-		logrus.WithField("statePath", d.statePath).Error(err)
+		log.Error().Str("statePath", d.statePath).Err(err).Msg("state convertion to json error")
 		return
 	}
 
 	if err := ioutil.WriteFile(d.statePath, data, 0644); err != nil {
-		logrus.WithField("savestate", d.statePath).Error(err)
+		log.Error().Str("statePath", d.statePath).Err(err).Msg("Writing state error")
 	}
 }
 
 func (d *davfsDriver) Create(r *volume.CreateRequest) error {
-	logrus.WithField("method", "create").Debugf("%#v", r)
+	log.Debug().Str("method", "create").Interface("volume.CreateRequest", r).Send()
 
 	d.Lock()
 	defer d.Unlock()
@@ -143,7 +143,7 @@ func (d *davfsDriver) Create(r *volume.CreateRequest) error {
 }
 
 func (d *davfsDriver) Remove(r *volume.RemoveRequest) error {
-	logrus.WithField("method", "remove").Debugf("%#v", r)
+	log.Debug().Str("method", "remove").Interface("volume.RemoveRequest", r).Send()
 
 	d.Lock()
 	defer d.Unlock()
@@ -165,7 +165,7 @@ func (d *davfsDriver) Remove(r *volume.RemoveRequest) error {
 }
 
 func (d *davfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
-	logrus.WithField("method", "path").Debugf("%#v", r)
+	log.Debug().Str("method", "path").Interface("volume.PathRequest", r).Send()
 
 	d.RLock()
 	defer d.RUnlock()
@@ -179,7 +179,7 @@ func (d *davfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) 
 }
 
 func (d *davfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
-	logrus.WithField("method", "mount").Debugf("%#v", r)
+	log.Debug().Str("method", "mount").Interface("volume.MountRequest", r).Send()
 
 	d.Lock()
 	defer d.Unlock()
@@ -203,7 +203,8 @@ func (d *davfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, erro
 			return &volume.MountResponse{}, logError("%v already exist and it's not a directory", v.Mountpoint)
 		}
 
-		if err := d.mountVolume(v); err != nil {
+		if buffer, err := d.mountVolume(v); err != nil {
+			log.Info().Str("output", string(buffer)).Msg("Try to connect to webdav")
 			return &volume.MountResponse{}, logError(err.Error())
 		}
 	}
@@ -213,7 +214,7 @@ func (d *davfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, erro
 }
 
 func (d *davfsDriver) Unmount(r *volume.UnmountRequest) error {
-	logrus.WithField("method", "unmount").Debugf("%#v", r)
+	log.Debug().Str("method", "unmount").Interface("volume.UnmountRequest", r).Send()
 
 	d.Lock()
 	defer d.Unlock()
@@ -235,7 +236,7 @@ func (d *davfsDriver) Unmount(r *volume.UnmountRequest) error {
 }
 
 func (d *davfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
-	logrus.WithField("method", "get").Debugf("%#v", r)
+	log.Debug().Str("method", "get").Interface("volume.GetRequest", r).Send()
 
 	d.Lock()
 	defer d.Unlock()
@@ -249,7 +250,7 @@ func (d *davfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 }
 
 func (d *davfsDriver) List() (*volume.ListResponse, error) {
-	logrus.WithField("method", "list").Debugf("")
+	log.Debug().Str("method", "list").Send()
 
 	d.Lock()
 	defer d.Unlock()
@@ -262,21 +263,23 @@ func (d *davfsDriver) List() (*volume.ListResponse, error) {
 }
 
 func (d *davfsDriver) Capabilities() *volume.CapabilitiesResponse {
-	logrus.WithField("method", "capabilities").Debugf("")
+	log.Debug().Str("method", "capabilities").Send()
 
 	return &volume.CapabilitiesResponse{Capabilities: volume.Capability{Scope: "local"}}
 }
 
-func (d *davfsDriver) mountVolume(v *davfsVolume) error {
-	logrus.WithField("method", "mountVolume").Debugf("%#v", v)
+func (d *davfsDriver) mountVolume(v *davfsVolume) ([]byte, error) {
+	log.Debug().Str("method", "mountVolume").Send()
 
 	u, err := url.Parse(v.URL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
-	logrus.WithField("method", "mountVolume").WithField("variable", "url").Debugf("%#v", u)
 
-	cmd := exec.Command("mount.davfs", fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Path), v.Mountpoint)
+	log.Debug().Str("method", "mountVolume").Str("url", u.String())
+
+	completeUrl := fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Path)
+	cmd := exec.Command("mount.davfs", completeUrl, v.Mountpoint)
 
 	if v.Conf != "" {
 		cmd.Args = append(cmd.Args, "-o", fmt.Sprintf("conf=%s", v.Conf))
@@ -314,46 +317,71 @@ func (d *davfsDriver) mountVolume(v *davfsVolume) error {
 		cmd.Args = append(cmd.Args, "-o", "_netdev")
 	}
 
+	var username string = ""
+	var password string = ""
+
 	if u.User != nil {
-		username := u.User.Username()
-		password, _ := u.User.Password()
-		cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s", username, password))
+		username = u.User.Username()
+		passwordTmp, isSetted := u.User.Password()
+
+		if isSetted {
+			password = passwordTmp
+		} else if v.Username != "" {
+			password = v.Password
+		}
 	} else if v.Username != "" {
-		cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s", v.Username, v.Password))
+		username = v.Username
+		password = v.Password
 	}
 
-	logrus.Debug(cmd.Args)
-	return cmd.Run()
+	if username != "" {
+		// cmd.Args = append(cmd.Args, "-o", fmt.Sprintf("username=%s", username))
+		cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", username, password))
+	}
+
+	log.Debug().Strs("Args", cmd.Args).Send()
+	return cmd.CombinedOutput()
 }
 
 func (d *davfsDriver) unmountVolume(target string) error {
 	cmd := fmt.Sprintf("umount %s", target)
-	logrus.Debug(cmd)
+	log.Debug().Msg(cmd)
 	return exec.Command("sh", "-c", cmd).Run()
 }
 
 func logError(format string, args ...interface{}) error {
-	logrus.Errorf(format, args...)
+	log.Error().Msgf(format, args...)
 	return fmt.Errorf(format, args)
 }
 
 func main() {
-	debug := os.Getenv("DEBUG")
-	if ok, _ := strconv.ParseBool(debug); ok {
-		logrus.SetLevel(logrus.DebugLevel)
+	logFile, err := os.OpenFile("/docker-volume-davfs.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0777)
+	if err != nil {
+		panic(err)
 	}
+	defer logFile.Close()
+
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: logFile})
+
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+
+	/*debug := os.Getenv("DEBUG")
+	if ok, _ := strconv.ParseBool(debug); !ok {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}*/
 
 	// make sure "/etc/davfs2/secrets" is owned by root
-	err := os.Chown("/etc/davfs2/secrets", 0, 0)
+	err = os.Chown("/etc/davfs2/secrets", 0, 0)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 
 	d, err := newdavfsDriver("/mnt")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 	h := volume.NewHandler(d)
-	logrus.Infof("listening on %s", socketAddress)
-	logrus.Error(h.ServeUnix(socketAddress, 0))
+
+	log.Info().Msgf("Listening on %s", socketAddress)
+	log.Error().Err(h.ServeUnix(socketAddress, 0))
 }
